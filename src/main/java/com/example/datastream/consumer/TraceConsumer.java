@@ -12,9 +12,10 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
+import com.example.datastream.model.EdgeClient;
 import com.example.datastream.model.EdgeKey;
 import com.example.datastream.model.EdgeKeyTimestamp;
-import com.example.datastream.model.EdgeValue;
+import com.example.datastream.model.EdgeServer;
 import com.example.datastream.service.TimeDataService;
 import com.google.protobuf.InvalidProtocolBufferException;
 
@@ -33,7 +34,7 @@ public class TraceConsumer {
 		properties.put("bootstrap.servers", brokers);
 		properties.put("group.id", group);
 		properties.put("enable.auto.commit", "true");
-		properties.put("auto.commit.interval.ms", "100");
+		properties.put("auto.commit.interval.ms", "1000");
 		properties.put("auto.offset.reset", "latest");
 		properties.put("session.timeout.ms", "15000");
 		properties.put("key.deserializer", StringDeserializer.class.getName());
@@ -51,25 +52,15 @@ public class TraceConsumer {
 	}
 
 	public void consume() throws InvalidProtocolBufferException {
-		HashMap<EdgeKey, EdgeValue> incompleteEdges = new HashMap<EdgeKey, EdgeValue>(); 
+		HashMap<EdgeKey, LinkedList<EdgeServer>> incompleteEdges = new HashMap<>(); 
+		HashMap<EdgeKey, EdgeClient> keyClient = new HashMap<>();
 		Queue<EdgeKeyTimestamp> order = new LinkedList<>();
 		
 		while (true) {
-			ConsumerRecords<String, byte[]> records = this.consumer.poll(Duration.ofMillis(100));
+			ConsumerRecords<String, byte[]> records = this.consumer.poll(Duration.ofMillis(1000));
 			
 			for (ConsumerRecord<String, byte[]> record : records) {
-//				this.service.startBatch();
-				this.service.handleTraceData(incompleteEdges, order, TracesData.parseFrom(record.value()));
-//				this.service.sendBatch();
-			}
-			
-			long currentTs = System.currentTimeMillis()*1000000;
-			//remove after 30 secs
-			while (!order.isEmpty() && currentTs > order.peek().getStartTs() + 3e10) {
-				EdgeKey edgeKey = order.peek().getEdgeKey();
-				if (incompleteEdges.containsKey(edgeKey))
-					incompleteEdges.remove(edgeKey);
-				order.remove();
+				this.service.handleTraceData(incompleteEdges, keyClient, order, TracesData.parseFrom(record.value()));
 			}
 		}
 	}

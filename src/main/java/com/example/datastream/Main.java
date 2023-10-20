@@ -11,7 +11,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 public class Main {
 	public static void main(String[] args)
 			throws FileNotFoundException, UnsupportedEncodingException, InvalidProtocolBufferException {
-		TimeDataRepo cassandra = new TimeDataRepo(
+		final TimeDataRepo cassandra = new TimeDataRepo(
 				"cosmosdb111.cassandra.cosmos.azure.com", 
 				10350, 
 				"cosmosdb111",
@@ -19,12 +19,12 @@ public class Main {
 		);
 
 		//5 mins bucket
-		TimeDataService timeDataService = new TimeDataService(
+		final TimeDataService timeDataService = new TimeDataService(
 				(long) 3e11, 
 						cassandra
 		);
 
-		TraceConsumer consumer = new TraceConsumer(
+		final TraceConsumer consumer = new TraceConsumer(
 				timeDataService, 
 				"dory.srvs.cloudkafka.com:9094", 
 				"beqdphse",

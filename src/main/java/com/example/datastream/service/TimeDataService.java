@@ -1,13 +1,14 @@
 package com.example.datastream.service;
 
 import java.util.HashMap;
-import java.util.HexFormat;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 
+import com.example.datastream.model.EdgeClient;
 import com.example.datastream.model.EdgeKey;
 import com.example.datastream.model.EdgeKeyTimestamp;
-import com.example.datastream.model.EdgeValue;
+import com.example.datastream.model.EdgeServer;
 import com.example.datastream.repo.TimeDataRepo;
 import com.google.protobuf.ByteString;
 
@@ -30,7 +31,7 @@ public class TimeDataService {
 	}
 
 	public boolean chkSpanErr(Span data) {
-		KeyValue statusKey = this.getKey("http.status_code", data);
+		KeyValue statusKey = this.getKey("http.status_code", data.getAttributesList());
 
 		if (statusKey != null)
 			return statusKey.getValue().getIntValue() >= 400;
@@ -38,82 +39,52 @@ public class TimeDataService {
 		return data.getStatus().getCode() == StatusCode.STATUS_CODE_ERROR;
 	}
 
-	public boolean chkEdgeOk(EdgeValue edgeValue) {
-		return edgeValue.getClient() != null && edgeValue.getServer() != null;
-	}
-
 	public long convertToBucket(long tsNs) {
 		return tsNs / this.bucketNs * this.bucketNs;
 	}
 
-	public void startBatch() {
-		this.cassandra.startBatch();
+	public KeyValue getKey(String name, List<KeyValue> spanAttri) {
+		for(KeyValue keyValue:spanAttri)
+			if(keyValue.getKey().equals(name))
+				return keyValue;
+		return null;
 	}
 	
-	public void genBatchQuery(Long bucket, Long ts, String client, String server, String connType, Long serverDurUs, Boolean isErr) {
-		this.cassandra.genBatchQuery(bucket, ts, client, server, connType, serverDurUs, isErr);
-	}
-	
-	public void sendBatch() {
-		this.cassandra.sendBatch();
-	}
-	
-	public void insertData(Long bucket, Long ts, String client, String server, String connType, Long serverDurUs,
-			Boolean isErr) {
-		this.cassandra.insert(bucket, ts, client, server, connType, serverDurUs, isErr);
-	}
-	
-	public void insertPrepared(Long bucket, Long ts, String client, String server, String connType, Long serverDurUs, Boolean isErr) {
-		this.cassandra.insertPrepared(bucket, ts, client, server, connType, serverDurUs, isErr);
-	}
-
-	public KeyValue getKey(String name, Span span) {
-		return span.getAttributesList().stream().filter(x -> x.getKey().equals(name)).findFirst().orElse(null);
-	}
-
-	public KeyValue getKeyResource(String name, ResourceSpans resourceSpans) {
-		return resourceSpans.getResource().getAttributesList().stream().filter(x -> x.getKey().equals(name)).findFirst()
-				.orElse(null);
-	}
-	
-	public void insertDataClientProducer(Queue<EdgeKeyTimestamp> order, HashMap<EdgeKey, EdgeValue> incompleteEdges, ByteString traceId, ByteString spanId, Long startTimeNs, Long bucketTime, Long durationUs, String currService, Boolean spanErr, String connType) {
+	public void insertDataClientProducer(Queue<EdgeKeyTimestamp> order, HashMap<EdgeKey, LinkedList<EdgeServer>> incompleteEdges, HashMap<EdgeKey, EdgeClient> keyClient,  ByteString traceId, ByteString spanId, Long startTimeNs, Long bucketTime, String currService, String connType) {
 		EdgeKey edgeKey = new EdgeKey(traceId, spanId);
-		if (incompleteEdges.containsKey(edgeKey)) {
-			EdgeValue edgeValue = incompleteEdges.get(edgeKey);
-			edgeValue.setBucket(bucketTime);
-			edgeValue.setTs(startTimeNs);
-			edgeValue.setClient(currService);
-			edgeValue.setIsErr(edgeValue.getIsErr() || spanErr);
-			if (this.chkEdgeOk(edgeValue)) {
-				// insert
-				this.insertPrepared(edgeValue.getBucket(), edgeValue.getTs(), edgeValue.getClient(), edgeValue.getServer(), edgeValue.getConn(), edgeValue.getServerDur(), edgeValue.getIsErr());
-//				this.genBatchQuery(edgeValue.getBucket(), edgeValue.getTs(), edgeValue.getClient(), edgeValue.getServer(), edgeValue.getConn(), edgeValue.getServerDur(), edgeValue.getIsErr());
-				incompleteEdges.remove(edgeKey);
+		
+		if(!keyClient.containsKey(edgeKey))
+			keyClient.put(edgeKey, new EdgeClient(currService, bucketTime, startTimeNs, connType));
+		
+		LinkedList<EdgeServer> servers = incompleteEdges.get(edgeKey);
+		if (servers != null) {
+			EdgeClient edgeClient = keyClient.get(edgeKey);
+			
+			while(!servers.isEmpty()) {
+				EdgeServer edgeServer = servers.peek();
+				this.cassandra.insertPrepared(edgeClient.getBucket(), edgeClient.getTs(), edgeServer.getServerTs(), edgeClient.getClient(), edgeServer.getServer(), edgeClient.getConn(), edgeServer.getServerDur(), edgeServer.getIsErr());
+				servers.remove();
 			}
 		} else {
 			order.add(new EdgeKeyTimestamp(edgeKey, startTimeNs));
-			incompleteEdges.put(edgeKey, new EdgeValue(bucketTime, startTimeNs, currService, null,
-					connType, spanErr, null));
+			incompleteEdges.put(edgeKey, new LinkedList<>());
 		}
 	}
 	
-	public void insertDataServerConsumer(Queue<EdgeKeyTimestamp> order, HashMap<EdgeKey, EdgeValue> incompleteEdges, ByteString traceId, ByteString parSpanId, Long startTimeNs, Long bucketTime, Long durationUs, String currService, Boolean spanErr, String connType) {
+	public void insertDataServerConsumer(Queue<EdgeKeyTimestamp> order, HashMap<EdgeKey, LinkedList<EdgeServer>> incompleteEdges, HashMap<EdgeKey, EdgeClient> keyClient, ByteString traceId, ByteString parSpanId, Long startTimeNs, Long bucketTime, Long durationUs, String currService, Boolean spanErr, String connType) {
 		EdgeKey edgeKey = new EdgeKey(traceId, parSpanId);
-		if (incompleteEdges.containsKey(edgeKey)) {
-			EdgeValue edgeValue = incompleteEdges.get(edgeKey);
-			edgeValue.setServer(currService);
-			edgeValue.setServerDur(durationUs);
-			edgeValue.setIsErr(edgeValue.getIsErr() || spanErr);
-			if (this.chkEdgeOk(edgeValue)) {
-				// insert
-				this.insertPrepared(edgeValue.getBucket(), edgeValue.getTs(), edgeValue.getClient(), edgeValue.getServer(), edgeValue.getConn(), edgeValue.getServerDur(), edgeValue.getIsErr());
-//				this.genBatchQuery(edgeValue.getBucket(), edgeValue.getTs(), edgeValue.getClient(), edgeValue.getServer(), edgeValue.getConn(), edgeValue.getServerDur(), edgeValue.getIsErr());
-				incompleteEdges.remove(edgeKey);
+		
+		if(!keyClient.containsKey(edgeKey)) {
+			if (!incompleteEdges.containsKey(edgeKey)) {
+				order.add(new EdgeKeyTimestamp(edgeKey, startTimeNs));
+				incompleteEdges.put(edgeKey, new LinkedList<>());
 			}
-		} else {
-			order.add(new EdgeKeyTimestamp(edgeKey, startTimeNs));
-			incompleteEdges.put(edgeKey,
-					new EdgeValue(null, null, null, currService, connType, spanErr, durationUs));
+			
+			incompleteEdges.get(edgeKey).add(new EdgeServer(startTimeNs, currService, spanErr, durationUs));
+		}
+		else {
+			EdgeClient edgeClient = keyClient.get(edgeKey);
+			this.cassandra.insertPrepared(edgeClient.getBucket(), edgeClient.getTs(), startTimeNs, edgeClient.getClient(), currService, edgeClient.getConn(), durationUs, spanErr);
 		}
 	}
 
@@ -122,15 +93,16 @@ public class TimeDataService {
 	}
 
 	public void handleTraceData(
-			HashMap<EdgeKey, EdgeValue> incompleteEdges, 
+			HashMap<EdgeKey, LinkedList<EdgeServer>> incompleteEdges, 
+			HashMap<EdgeKey, EdgeClient> keyClient, 
 			Queue<EdgeKeyTimestamp> order,
 			TracesData data) {
 		List<ResourceSpans> list = data.getResourceSpansList();
 		for (ResourceSpans resourceSpans : list) {
-			KeyValue keyServiceName = this.getKeyResource("service.name", resourceSpans);
+			KeyValue keyServiceName = this.getKey("service.name", resourceSpans.getResource().getAttributesList());
 
 			if (keyServiceName == null)
-				return;
+				continue;
 
 			String serviceName = keyServiceName.getValue().getStringValue();
 			List<ScopeSpans> scopeSpans = resourceSpans.getScopeSpansList();
@@ -149,41 +121,36 @@ public class TimeDataService {
 					String connType = "";
 					String currService = serviceName;
 					ByteString parSpanId = span.getParentSpanId();
-
-					System.out.printf("trace=%s, span=%s, par=%s\n", HexFormat.of().formatHex(traceId.toByteArray()),
-							HexFormat.of().formatHex(spanId.toByteArray()),
-							parSpanId != null ? HexFormat.of().formatHex(parSpanId.toByteArray()) : null);
-
+					
 					if (kind == SpanKind.SPAN_KIND_CLIENT) {
-						KeyValue dbKey = this.getKey("db.name", span);
+						KeyValue dbKey = this.getKey("db.name", span.getAttributesList());
 
 						if (dbKey != null) {
-							String dbSystem = this.getKey("db.system", span).getValue().getStringValue();
+							String dbSystem = this.getKey("db.system", span.getAttributesList()).getValue().getStringValue();
 							connType = "database";
 							String client = currService;
 							String server = new StringBuilder().append("db").append('_').append(dbSystem).append('_').append(dbKey.getValue().getStringValue()).toString();
 							Long serverDur = durationUs;
 							Boolean err = spanErr;
 							// insert db
-							this.insertPrepared(bucketTime, startTimeNs, client, server, connType, serverDur, err);
-//							this.genBatchQuery(bucketTime, startTimeNs, client, server, connType, serverDur, err);
+							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
 							continue;
 						}
 						else {
 							connType = "endpoint";
 						}
 						
-						this.insertDataClientProducer(order, incompleteEdges, traceId, spanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
+						this.insertDataClientProducer(order, incompleteEdges, keyClient, traceId, spanId, startTimeNs, bucketTime, currService, connType);
 					} else if (kind == SpanKind.SPAN_KIND_PRODUCER) {
 						connType = "async";
 						
-						this.insertDataClientProducer(order, incompleteEdges, traceId, spanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
+						this.insertDataClientProducer(order, incompleteEdges, keyClient, traceId, spanId, startTimeNs, bucketTime, currService, connType);
 					} else if (kind == SpanKind.SPAN_KIND_SERVER) {
-						KeyValue targetKey = this.getKey("http.target", span);
+						KeyValue targetKey = this.getKey("http.target", span.getAttributesList());
 
 						if (targetKey != null) {
 							String target = targetKey.getValue().getStringValue();
-							String method = this.getKey("http.method", span).getValue().getStringValue();
+							String method = this.getKey("http.method", span.getAttributesList()).getValue().getStringValue();
 							connType = "endpoint";
 							currService = new StringBuilder().append(serviceName).append('_').append(method).append('_').append(target).toString();
 							String client = serviceName;
@@ -191,21 +158,19 @@ public class TimeDataService {
 							Long serverDur = durationUs;
 							Boolean err = spanErr;
 							// insert
-							this.insertPrepared(bucketTime, startTimeNs, client, server, connType, serverDur, err);
-//							this.genBatchQuery(bucketTime, startTimeNs, client, server, connType, serverDur, err);
+							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
 						}
 
 						if (parSpanId == ByteString.EMPTY) {
-							this.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, "random-client", currService, connType, durationUs, spanErr);
-//							this.genBatchQuery(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, "random-client", currService, connType, durationUs, spanErr);
+							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-client", currService, connType, durationUs, spanErr);
 							continue;
 						}
 
-						this.insertDataServerConsumer(order, incompleteEdges, traceId, parSpanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
+						this.insertDataServerConsumer(order, incompleteEdges, keyClient, traceId, parSpanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
 					} else if (kind == SpanKind.SPAN_KIND_CONSUMER) {
-						KeyValue systemKey = this.getKey("messaging.system", span);
+						KeyValue systemKey = this.getKey("messaging.system", span.getAttributesList());
 						
-						KeyValue lengthKey = this.getKey("messaging.message.payload_size_bytes", span);
+						KeyValue lengthKey = this.getKey("messaging.message.payload_size_bytes", span.getAttributesList());
 						
 						//get rid of processing
 						if(lengthKey != null && lengthKey.getValue().getIntValue() == 0)
@@ -213,7 +178,7 @@ public class TimeDataService {
 						
 						if (systemKey != null) {
 							String system = systemKey.getValue().getStringValue();
-							String dest = this.getKey("messaging.destination.name", span).getValue().getStringValue();
+							String dest = this.getKey("messaging.destination.name", span.getAttributesList()).getValue().getStringValue();
 							connType = "async";
 							currService = new StringBuilder().append("queue").append('_').append(system).append('_').append(dest).toString();
 							String client = currService;
@@ -221,24 +186,23 @@ public class TimeDataService {
 							Long serverDur = durationUs;
 							Boolean err = spanErr;
 							// insert
-							this.insertPrepared(this.convertToBucket(startTimeNs), startTimeNs, client, server, connType, serverDur, err);
-//							this.genBatchQuery(this.convertToBucket(startTimeNs), startTimeNs, client, server, connType, serverDur, err);
+							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
 						}
 
 						if (parSpanId == ByteString.EMPTY) {
-							this.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, "random-producer", currService, connType, durationUs, spanErr);
-//							this.genBatchQuery(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, "random-producer", currService, connType, durationUs, spanErr);
+							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-producer", currService, connType, durationUs, spanErr);
 							continue;
 						}
 
-						this.insertDataServerConsumer(order, incompleteEdges, traceId, parSpanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
+						this.insertDataServerConsumer(order, incompleteEdges, keyClient, traceId, parSpanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
 					}
 
 					//remove edges after 10secs from curr span
 					if (!order.isEmpty() && span.getStartTimeUnixNano() > order.peek().getStartTs() + 1e10) {
 						EdgeKey edgeKey = order.peek().getEdgeKey();
-						if (incompleteEdges.containsKey(edgeKey))
-							incompleteEdges.remove(edgeKey);
+						incompleteEdges.get(edgeKey).clear();
+						incompleteEdges.remove(edgeKey);
+						keyClient.remove(edgeKey);
 						order.remove();
 					}
 				}
