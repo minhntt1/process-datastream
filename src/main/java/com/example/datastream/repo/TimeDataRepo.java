@@ -26,7 +26,7 @@ public class TimeDataRepo {
 		this.batchQuery.append("begin unlogged batch ");
 	}
 
-	public void genBatchQuery(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurUs, Boolean isErr) {
+	public void genBatchQuery(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr) {
 		this.batchQuery.append("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur) ");
 		this.batchQuery.append("values (");
 		this.batchQuery.append(bucket).append(",");
@@ -36,7 +36,7 @@ public class TimeDataRepo {
 		this.batchQuery.append("'").append(server).append("'").append(",");
 		this.batchQuery.append("'").append(connType).append("'").append(",");
 		this.batchQuery.append(isErr).append(",");
-		this.batchQuery.append(serverDurUs);
+		this.batchQuery.append(serverDurNs);
 		this.batchQuery.append(");");
 	}
 
@@ -45,7 +45,7 @@ public class TimeDataRepo {
 		this.cassandraSession.executeAsync(this.batchQuery.toString());
 	}
 
-	public void insert(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurUs, Boolean isErr) {
+	public void insert(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr) {
 		StringBuilder builder = new StringBuilder();
 		builder.append("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur) ");
 		builder.append("values (");
@@ -56,13 +56,13 @@ public class TimeDataRepo {
 		builder.append("'").append(server).append("'").append(",");
 		builder.append("'").append(connType).append("'").append(",");
 		builder.append(isErr).append(",");
-		builder.append(serverDurUs);
+		builder.append(serverDurNs);
 		builder.append(");");
 		this.cassandraSession.executeAsync(builder.toString());
 	}
 
-	public void insertPrepared(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurUs, Boolean isErr) {
-		this.cassandraSession.executeAsync(this.preparedInsertStatement.bind(bucket, ts, tsServer, client, server, connType, isErr, serverDurUs));
+	public void insertPrepared(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr) {
+		this.cassandraSession.executeAsync(this.preparedInsertStatement.bind(bucket, ts, tsServer, client, server, connType, isErr, serverDurNs));
 	}
 
 	public void close() {
