@@ -113,7 +113,7 @@ public class TimeDataService {
 				for (Span span : spans) {
 					ByteString traceId = span.getTraceId();
 					ByteString spanId = span.getSpanId();
-					Long durationUs = (span.getEndTimeUnixNano() - span.getStartTimeUnixNano()) / 1000;
+					Long durationNs = span.getEndTimeUnixNano() - span.getStartTimeUnixNano();
 					Long startTimeNs = span.getStartTimeUnixNano();
 					Long bucketTime = this.convertToBucket(startTimeNs);
 					Boolean spanErr = this.chkSpanErr(span);
@@ -130,7 +130,7 @@ public class TimeDataService {
 							connType = "database";
 							String client = currService;
 							String server = new StringBuilder().append("db").append('_').append(dbSystem).append('_').append(dbKey.getValue().getStringValue()).toString();
-							Long serverDur = durationUs;
+							Long serverDur = durationNs;
 							Boolean err = spanErr;
 							// insert db
 							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
@@ -155,18 +155,18 @@ public class TimeDataService {
 							currService = new StringBuilder().append(serviceName).append('_').append(method).append('_').append(target).toString();
 							String client = serviceName;
 							String server = currService;
-							Long serverDur = durationUs;
+							Long serverDur = durationNs;
 							Boolean err = spanErr;
 							// insert
 							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
 						}
 
 						if (parSpanId == ByteString.EMPTY) {
-							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-client", currService, connType, durationUs, spanErr);
+							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-client", currService, connType, durationNs, spanErr);
 							continue;
 						}
 
-						this.insertDataServerConsumer(order, incompleteEdges, keyClient, traceId, parSpanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
+						this.insertDataServerConsumer(order, incompleteEdges, keyClient, traceId, parSpanId, startTimeNs, bucketTime, durationNs, currService, spanErr, connType);
 					} else if (kind == SpanKind.SPAN_KIND_CONSUMER) {
 						KeyValue systemKey = this.getKey("messaging.system", span.getAttributesList());
 						
@@ -183,18 +183,18 @@ public class TimeDataService {
 							currService = new StringBuilder().append("queue").append('_').append(system).append('_').append(dest).toString();
 							String client = currService;
 							String server = serviceName;
-							Long serverDur = durationUs;
+							Long serverDur = durationNs;
 							Boolean err = spanErr;
 							// insert
 							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
 						}
 
 						if (parSpanId == ByteString.EMPTY) {
-							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-producer", currService, connType, durationUs, spanErr);
+							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-producer", currService, connType, durationNs, spanErr);
 							continue;
 						}
 
-						this.insertDataServerConsumer(order, incompleteEdges, keyClient, traceId, parSpanId, startTimeNs, bucketTime, durationUs, currService, spanErr, connType);
+						this.insertDataServerConsumer(order, incompleteEdges, keyClient, traceId, parSpanId, startTimeNs, bucketTime, durationNs, currService, spanErr, connType);
 					}
 
 					//remove edges after 10secs from curr span
