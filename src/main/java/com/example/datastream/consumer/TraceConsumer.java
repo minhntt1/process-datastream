@@ -17,13 +17,13 @@ import com.example.datastream.model.EdgeKey;
 import com.example.datastream.model.EdgeKeyTimestamp;
 import com.example.datastream.model.EdgeServer;
 import com.example.datastream.service.TimeDataService;
-import com.google.protobuf.InvalidProtocolBufferException;
 
 import io.opentelemetry.proto.trace.v1.TracesData;
 
 public class TraceConsumer {
 	private final KafkaConsumer<String, byte[]> consumer;
 	private final TimeDataService service;
+	private volatile boolean close = false;
 
 	public TraceConsumer(TimeDataService service, String brokers, String user, String pass, String topic, String group) {
 		this.service = service;
@@ -34,7 +34,7 @@ public class TraceConsumer {
 		properties.put("bootstrap.servers", brokers);
 		properties.put("group.id", group);
 		properties.put("enable.auto.commit", "true");
-		properties.put("auto.commit.interval.ms", "1000");
+		properties.put("auto.commit.interval.ms", "100");
 		properties.put("auto.offset.reset", "latest");
 		properties.put("session.timeout.ms", "15000");
 		properties.put("key.deserializer", StringDeserializer.class.getName());
@@ -45,33 +45,45 @@ public class TraceConsumer {
 		this.consumer = new KafkaConsumer<>(properties);
 		this.consumer.subscribe(Arrays.asList(topic));
 	}
+	
+	public void stop() {
+		this.close = true;
+	}
 
 	public void close() {
 		this.service.close();
 		this.consumer.close();
 	}
 
-	public void consume() throws InvalidProtocolBufferException {
+	public void consume() {
 		HashMap<EdgeKey, LinkedList<EdgeServer>> incompleteEdges = new HashMap<>(); 
 		HashMap<EdgeKey, EdgeClient> keyClient = new HashMap<>();
 		Queue<EdgeKeyTimestamp> order = new LinkedList<>();
 		
-		while (true) {
-			ConsumerRecords<String, byte[]> records = this.consumer.poll(Duration.ofMillis(1000));
-			
-			for (ConsumerRecord<String, byte[]> record : records) {
-				this.service.handleTraceData(incompleteEdges, keyClient, order, TracesData.parseFrom(record.value()));
+		try {
+			while (!close) {
+				ConsumerRecords<String, byte[]> records = this.consumer.poll(Duration.ofMillis(1000));
+				
+				for (ConsumerRecord<String, byte[]> record : records) {
+					this.service.handleTraceData(incompleteEdges, keyClient, order, TracesData.parseFrom(record.value()));
+				}
+				
+				//remove edges after 5mins from curr timestamp
+				long curr = System.currentTimeMillis()*1000000;
+				while (!order.isEmpty() && curr > order.peek().getStartTs() + 3e11) {
+					EdgeKey edgeKey = order.peek().getEdgeKey();
+					incompleteEdges.get(edgeKey).clear();
+					incompleteEdges.remove(edgeKey);
+					keyClient.remove(edgeKey);
+					order.remove();
+				}
 			}
-			
-			//remove edges after 5mins from curr timestamp
-			long curr = System.currentTimeMillis()*1000000;
-			while (!order.isEmpty() && curr > order.peek().getStartTs() + 3e11) {
-				EdgeKey edgeKey = order.peek().getEdgeKey();
-				incompleteEdges.get(edgeKey).clear();
-				incompleteEdges.remove(edgeKey);
-				keyClient.remove(edgeKey);
-				order.remove();
-			}
+		}
+		catch (Exception exception) {
+			exception.printStackTrace();
+		}
+		finally {
+			this.close();
 		}
 	}
 }
