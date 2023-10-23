@@ -62,7 +62,7 @@ public class TimeDataService {
 			
 			while(!servers.isEmpty()) {
 				EdgeServer edgeServer = servers.peek();
-				this.cassandra.insertPrepared(edgeClient.getBucket(), edgeClient.getTs(), edgeServer.getServerTs(), edgeClient.getClient(), edgeServer.getServer(), edgeClient.getConn(), edgeServer.getServerDur(), edgeServer.getIsErr());
+				this.cassandra.insertPrepared(edgeClient.getBucket(), edgeClient.getTs(), edgeServer.getServerTs(), edgeClient.getClient(), edgeServer.getServer(), edgeClient.getConn(), edgeServer.getServerDur(), edgeServer.getIsErr(), false);
 				servers.remove();
 			}
 		} else {
@@ -84,7 +84,7 @@ public class TimeDataService {
 		}
 		else {
 			EdgeClient edgeClient = keyClient.get(edgeKey);
-			this.cassandra.insertPrepared(edgeClient.getBucket(), edgeClient.getTs(), startTimeNs, edgeClient.getClient(), currService, edgeClient.getConn(), durationUs, spanErr);
+			this.cassandra.insertPrepared(edgeClient.getBucket(), edgeClient.getTs(), startTimeNs, edgeClient.getClient(), currService, edgeClient.getConn(), durationUs, spanErr, false);
 		}
 	}
 
@@ -133,7 +133,7 @@ public class TimeDataService {
 							Long serverDur = durationNs;
 							Boolean err = spanErr;
 							// insert db
-							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
+							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err, false);
 							continue;
 						}
 						else {
@@ -153,16 +153,16 @@ public class TimeDataService {
 							String method = this.getKey("http.method", span.getAttributesList()).getValue().getStringValue();
 							connType = "endpoint";
 							currService = new StringBuilder().append(serviceName).append('_').append(method).append('_').append(target).toString();
-							String client = serviceName;
-							String server = currService;
+							String client = currService;
+							String server = serviceName;
 							Long serverDur = durationNs;
 							Boolean err = spanErr;
 							// insert
-							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
+							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err, true);
 						}
 
 						if (parSpanId == ByteString.EMPTY) {
-							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-client", currService, connType, durationNs, spanErr);
+							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-client", currService, connType, durationNs, spanErr, false);
 							continue;
 						}
 
@@ -186,24 +186,15 @@ public class TimeDataService {
 							Long serverDur = durationNs;
 							Boolean err = spanErr;
 							// insert
-							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err);
+							this.cassandra.insertPrepared(bucketTime, startTimeNs, startTimeNs, client, server, connType, serverDur, err, false);
 						}
 
 						if (parSpanId == ByteString.EMPTY) {
-							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-producer", currService, connType, durationNs, spanErr);
+							this.cassandra.insertPrepared(this.convertToBucket(startTimeNs - 1), startTimeNs - 1, startTimeNs, "random-producer", currService, connType, durationNs, spanErr, false);
 							continue;
 						}
 
 						this.insertDataServerConsumer(order, incompleteEdges, keyClient, traceId, parSpanId, startTimeNs, bucketTime, durationNs, currService, spanErr, connType);
-					}
-
-					//remove edges after 10secs from curr span
-					if (!order.isEmpty() && span.getStartTimeUnixNano() > order.peek().getStartTs() + 1e10) {
-						EdgeKey edgeKey = order.peek().getEdgeKey();
-						incompleteEdges.get(edgeKey).clear();
-						incompleteEdges.remove(edgeKey);
-						keyClient.remove(edgeKey);
-						order.remove();
 					}
 				}
 			}

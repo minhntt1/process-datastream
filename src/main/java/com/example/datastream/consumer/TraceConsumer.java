@@ -62,6 +62,16 @@ public class TraceConsumer {
 			for (ConsumerRecord<String, byte[]> record : records) {
 				this.service.handleTraceData(incompleteEdges, keyClient, order, TracesData.parseFrom(record.value()));
 			}
+			
+			//remove edges after 5mins from curr timestamp
+			long curr = System.currentTimeMillis()*1000000;
+			while (!order.isEmpty() && curr > order.peek().getStartTs() + 3e11) {
+				EdgeKey edgeKey = order.peek().getEdgeKey();
+				incompleteEdges.get(edgeKey).clear();
+				incompleteEdges.remove(edgeKey);
+				keyClient.remove(edgeKey);
+				order.remove();
+			}
 		}
 	}
 }

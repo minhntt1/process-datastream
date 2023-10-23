@@ -18,7 +18,7 @@ public class TimeDataRepo {
 		builder.withSSL();
 		this.cassandraSession = builder.build().connect();
 		this.batchQuery = new StringBuilder();
-		this.preparedInsertStatement = this.cassandraSession.prepare("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur) values (?,?,?,?,?,?,?,?);");
+		this.preparedInsertStatement = this.cassandraSession.prepare("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur,show_reverse) values (?,?,?,?,?,?,?,?,?);");
 	}
 
 	public void startBatch() {
@@ -26,8 +26,8 @@ public class TimeDataRepo {
 		this.batchQuery.append("begin unlogged batch ");
 	}
 
-	public void genBatchQuery(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr) {
-		this.batchQuery.append("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur) ");
+	public void genBatchQuery(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr, Boolean showReverse) {
+		this.batchQuery.append("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur,show_reverse) ");
 		this.batchQuery.append("values (");
 		this.batchQuery.append(bucket).append(",");
 		this.batchQuery.append(ts).append(",");
@@ -36,7 +36,8 @@ public class TimeDataRepo {
 		this.batchQuery.append("'").append(server).append("'").append(",");
 		this.batchQuery.append("'").append(connType).append("'").append(",");
 		this.batchQuery.append(isErr).append(",");
-		this.batchQuery.append(serverDurNs);
+		this.batchQuery.append(serverDurNs).append(',');
+		this.batchQuery.append(showReverse);
 		this.batchQuery.append(");");
 	}
 
@@ -45,9 +46,9 @@ public class TimeDataRepo {
 		this.cassandraSession.executeAsync(this.batchQuery.toString());
 	}
 
-	public void insert(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr) {
+	public void insert(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr, Boolean showReverse) {
 		StringBuilder builder = new StringBuilder();
-		builder.append("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur) ");
+		builder.append("insert into jaeger_v1_dc1.v4_time_data(bucket,ts,ts_server,client,server,conn_type,server_err,server_dur,show_reverse) ");
 		builder.append("values (");
 		builder.append(bucket).append(",");
 		builder.append(ts).append(",");
@@ -56,13 +57,14 @@ public class TimeDataRepo {
 		builder.append("'").append(server).append("'").append(",");
 		builder.append("'").append(connType).append("'").append(",");
 		builder.append(isErr).append(",");
-		builder.append(serverDurNs);
+		builder.append(serverDurNs).append(',');
+		builder.append(showReverse);
 		builder.append(");");
 		this.cassandraSession.executeAsync(builder.toString());
 	}
 
-	public void insertPrepared(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr) {
-		this.cassandraSession.executeAsync(this.preparedInsertStatement.bind(bucket, ts, tsServer, client, server, connType, isErr, serverDurNs));
+	public void insertPrepared(Long bucket, Long ts, Long tsServer, String client, String server, String connType, Long serverDurNs, Boolean isErr, Boolean showReverse) {
+		this.cassandraSession.executeAsync(this.preparedInsertStatement.bind(bucket, ts, tsServer, client, server, connType, isErr, serverDurNs, showReverse));
 	}
 
 	public void close() {
