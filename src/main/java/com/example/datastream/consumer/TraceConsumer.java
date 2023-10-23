@@ -34,7 +34,7 @@ public class TraceConsumer {
 		properties.put("bootstrap.servers", brokers);
 		properties.put("group.id", group);
 		properties.put("enable.auto.commit", "true");
-		properties.put("auto.commit.interval.ms", "100");
+		properties.put("auto.commit.interval.ms", "2000");
 		properties.put("auto.offset.reset", "latest");
 		properties.put("session.timeout.ms", "15000");
 		properties.put("key.deserializer", StringDeserializer.class.getName());
