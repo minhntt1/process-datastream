@@ -69,8 +69,8 @@ public class TraceConsumer {
 				}
 				
 				//remove edges after 5mins from curr timestamp
-				long curr = System.currentTimeMillis()*1000000;
-				while (!order.isEmpty() && curr > order.peek().getStartTs() + 3e11) {
+				long curr = System.currentTimeMillis();
+				while (!order.isEmpty() && curr > order.peek().getStartTs() + 3e5) {
 					EdgeKey edgeKey = order.peek().getEdgeKey();
 					incompleteEdges.get(edgeKey).clear();
 					incompleteEdges.remove(edgeKey);

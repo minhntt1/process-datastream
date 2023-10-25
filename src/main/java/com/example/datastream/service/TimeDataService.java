@@ -66,7 +66,7 @@ public class TimeDataService {
 				servers.remove();
 			}
 		} else {
-			order.add(new EdgeKeyTimestamp(edgeKey, startTimeNs));
+			order.add(new EdgeKeyTimestamp(edgeKey, System.currentTimeMillis()));
 			incompleteEdges.put(edgeKey, new LinkedList<>());
 		}
 	}
@@ -76,7 +76,7 @@ public class TimeDataService {
 		
 		if(!keyClient.containsKey(edgeKey)) {
 			if (!incompleteEdges.containsKey(edgeKey)) {
-				order.add(new EdgeKeyTimestamp(edgeKey, startTimeNs));
+				order.add(new EdgeKeyTimestamp(edgeKey, System.currentTimeMillis()));
 				incompleteEdges.put(edgeKey, new LinkedList<>());
 			}
 			
